@@ -15,18 +15,6 @@ use zip::ZipWriter;
 use zip::write::FileOptions;
 /// XML declaration shared by every serialized part.
 const XML_DECL: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n";
-/// Package content types part.
-const CONTENT_TYPES_XML: &str = concat!(
-    "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n",
-    "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">",
-    "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>",
-    "<Default Extension=\"xml\" ContentType=\"application/xml\"/>",
-    "<Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>",
-    "<Override PartName=\"/word/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml\"/>",
-    "<Override PartName=\"/word/numbering.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml\"/>",
-    "<Override PartName=\"/word/settings.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml\"/>",
-    "</Types>"
-);
 /// Package root relationships part.
 const ROOT_RELS_XML: &str = concat!(
     "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n",
@@ -34,44 +22,49 @@ const ROOT_RELS_XML: &str = concat!(
     "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/>",
     "</Relationships>"
 );
-/// Main document relationships part.
-const DOCUMENT_RELS_XML: &str = concat!(
-    "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n",
-    "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">",
-    "</Relationships>"
-);
 /// Serializes a complete Word document to bytes.
 pub(crate) fn serialize_document(doc: &FWord) -> crate::FWordResult<Vec<u8>> {
     let cursor = std::io::Cursor::new(Vec::new());
     let mut writer = ZipWriter::new(cursor);
-    let options = FileOptions::<()>::default();
+    let options: FileOptions<'_, '_, ()> = FileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated)
+        .unix_permissions(0o644);
+    let has_styles = !doc.styles.styles.is_empty() || doc.styles.raw_xml.is_some();
+    let has_numbering = !doc.numbering.abstract_nums.is_empty() || !doc.numbering.nums.is_empty();
+    let has_settings = doc.settings.raw_xml.is_some() || doc.settings.default_tab_stop.is_some();
     // Required package parts.
     writer.start_file("[Content_Types].xml", options)?;
-    writer.write_all(CONTENT_TYPES_XML.as_bytes())?;
+    writer
+        .write_all(serialize_content_types(has_styles, has_numbering, has_settings).as_bytes())?;
     writer.start_file("_rels/.rels", options)?;
     writer.write_all(ROOT_RELS_XML.as_bytes())?;
     // Main document part.
-    let main_part = doc.package.main_part.as_str();
+    let main_part = if doc.package.main_part.trim().is_empty() {
+        "word/document.xml"
+    } else {
+        doc.package.main_part.as_str()
+    };
     let body_xml = serialize_body(&doc.body);
     writer.start_file(main_part, options)?;
     writer.write_all(body_xml.as_bytes())?;
     // Main document relationships.
+    let document_rels_xml = serialize_document_rels(doc);
     writer.start_file("word/_rels/document.xml.rels", options)?;
-    writer.write_all(DOCUMENT_RELS_XML.as_bytes())?;
+    writer.write_all(document_rels_xml.as_bytes())?;
     // Styles.
-    if !doc.styles.styles.is_empty() || doc.styles.raw_xml.is_some() {
+    if has_styles {
         let xml = serialize_styles(&doc.styles);
         writer.start_file("word/styles.xml", options)?;
         writer.write_all(xml.as_bytes())?;
     }
     // Numbering.
-    if !doc.numbering.abstract_nums.is_empty() || !doc.numbering.nums.is_empty() {
+    if has_numbering {
         let xml = serialize_numbering(&doc.numbering);
         writer.start_file("word/numbering.xml", options)?;
         writer.write_all(xml.as_bytes())?;
     }
     // Settings.
-    if doc.settings.raw_xml.is_some() || doc.settings.default_tab_stop.is_some() {
+    if has_settings {
         let xml = serialize_settings(&doc.settings);
         writer.start_file("word/settings.xml", options)?;
         writer.write_all(xml.as_bytes())?;
@@ -92,6 +85,26 @@ pub(crate) fn serialize_document(doc: &FWord) -> crate::FWordResult<Vec<u8>> {
     let cursor = writer.finish()?;
     Ok(cursor.into_inner())
 }
+/// Serializes the package content types part.
+fn serialize_content_types(has_styles: bool, has_numbering: bool, has_settings: bool) -> String {
+    let mut out = String::new();
+    out.push_str(XML_DECL);
+    out.push_str("<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">");
+    out.push_str("<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>");
+    out.push_str("<Default Extension=\"xml\" ContentType=\"application/xml\"/>");
+    out.push_str("<Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>");
+    if has_styles {
+        out.push_str("<Override PartName=\"/word/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml\"/>");
+    }
+    if has_numbering {
+        out.push_str("<Override PartName=\"/word/numbering.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml\"/>");
+    }
+    if has_settings {
+        out.push_str("<Override PartName=\"/word/settings.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml\"/>");
+    }
+    out.push_str("</Types>");
+    out
+}
 /// Serializes the document body.
 fn serialize_body(body: &FBody) -> String {
     let mut out = String::new();
@@ -104,6 +117,7 @@ fn serialize_body(body: &FBody) -> String {
             FBlock::Table(t) => out.push_str(&serialize_table(t)),
         }
     }
+    out.push_str("<w:sectPr><w:pgSz w:w=\"11906\" w:h=\"16838\"/><w:pgMar w:top=\"1440\" w:right=\"1440\" w:bottom=\"1440\" w:left=\"1440\" w:header=\"708\" w:footer=\"708\" w:gutter=\"0\"/></w:sectPr>");
     out.push_str("</w:body></w:document>");
     out
 }
@@ -825,5 +839,54 @@ fn serialize_settings(settings: &FSettings) -> String {
         ));
     }
     out.push_str("</w:settings>");
+    out
+}
+/// Serializes the main document relationship part.
+fn serialize_document_rels(doc: &FWord) -> String {
+    let mut out = String::new();
+    out.push_str(XML_DECL);
+    out.push_str(
+        "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">",
+    );
+    let mut seen = std::collections::HashSet::new();
+    for block in &doc.body.blocks {
+        match block {
+            FBlock::Paragraph(p) => {
+                for link in &p.hyperlinks {
+                    if let Some(rid) = &link.relationship_id {
+                        if seen.insert(rid.clone()) {
+                            let target = link.target.clone().unwrap_or_default();
+                            out.push_str(&format!(
+                                "<Relationship Id=\"{}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"{}\" TargetMode=\"External\"/>",
+                                encode_xml_text(rid),
+                                encode_xml_text(&target)
+                            ));
+                        }
+                    }
+                }
+            }
+            FBlock::Table(t) => {
+                for row in &t.rows {
+                    for cell in &row.cells {
+                        for p in &cell.paragraphs {
+                            for link in &p.hyperlinks {
+                                if let Some(rid) = &link.relationship_id {
+                                    if seen.insert(rid.clone()) {
+                                        let target = link.target.clone().unwrap_or_default();
+                                        out.push_str(&format!(
+                                            "<Relationship Id=\"{}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"{}\" TargetMode=\"External\"/>",
+                                            encode_xml_text(rid),
+                                            encode_xml_text(&target)
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    out.push_str("</Relationships>");
     out
 }

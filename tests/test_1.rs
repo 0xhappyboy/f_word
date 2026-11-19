@@ -1,10 +1,10 @@
 #[cfg(test)]
 mod tests {
     use f_word::{
-        FBlock, FBorder, FCellBorders, FCellVerticalAlignment, FHyperlink, FNumberingProperties,
-        FParagraph, FParagraphAlignment, FParagraphProperties, FRun, FRunProperties, FTable,
-        FTableCell, FTableCellProperties, FTableProperties, FTableRow, FTableRowProperties,
-        FVerticalAlign, FVerticalMerge, FWord,
+        FBlock, FBorder, FCellBorders, FCellVerticalAlignment, FHyperlink, FLineSpacingRule,
+        FNumberingProperties, FParagraph, FParagraphAlignment, FParagraphProperties, FRun,
+        FRunProperties, FTable, FTableCell, FTableCellProperties, FTableProperties, FTableRow,
+        FTableRowProperties, FVerticalAlign, FVerticalMerge, FWord,
     };
     /// Returns the output directory (Downloads on Windows, temp dir elsewhere).
     fn output_dir() -> std::path::PathBuf {
@@ -62,8 +62,7 @@ mod tests {
         let path = save(&doc, "empty.docx");
         println!("empty document written to {}", path.display());
     }
-    /// Various run styles: bold, italic, underline, strike, size, font,
-    /// color, highlight, superscript/subscript, caps, small caps.
+    /// bold, italic, underline, strike, size, font, color, highlight, superscript/subscript, caps, small caps.
     #[test]
     fn create_styled_runs() {
         let mut doc = FWord::new_empty();
@@ -325,5 +324,259 @@ mod tests {
         }
         let path = save(&parsed, "round_trip.docx");
         println!("round-trip document written to {}", path.display());
+    }
+    #[test]
+    fn create_complex_document() {
+        use f_word::{
+            FBlock, FBorder, FCellBorders, FCellVerticalAlignment, FHyperlink,
+            FNumberingProperties, FParagraph, FParagraphAlignment, FParagraphProperties, FRun,
+            FRunProperties, FTable, FTableCell, FTableCellProperties, FTableProperties, FTableRow,
+            FTableRowProperties, FVerticalAlign, FVerticalMerge, FWord,
+        };
+        fn run(text: &str, props: FRunProperties) -> FRun {
+            FRun {
+                text: text.to_string(),
+                properties: props,
+                ..Default::default()
+            }
+        }
+        fn para(text: &str) -> FParagraph {
+            FParagraph {
+                runs: vec![run(text, FRunProperties::default())],
+                ..Default::default()
+            }
+        }
+        fn cell(text: &str) -> FTableCell {
+            FTableCell {
+                paragraphs: vec![para(text)],
+                ..Default::default()
+            }
+        }
+        let mut doc = FWord::new_empty();
+        let mut title = FParagraph::default();
+        title.properties = FParagraphProperties {
+            style_id: Some("Title".into()),
+            alignment: FParagraphAlignment::Center,
+            spacing_before: Some(240),
+            spacing_after: Some(240),
+            outline_level: Some(0),
+            ..Default::default()
+        };
+        title.runs.push(run(
+            "Complex Document",
+            FRunProperties {
+                bold: Some(true),
+                size: Some(56),
+                font_family: Some("Calibri".into()),
+                color: Some("1F4E79".into()),
+                caps: Some(true),
+                ..Default::default()
+            },
+        ));
+        doc.body.blocks.push(FBlock::Paragraph(title));
+        let mut intro = FParagraph::default();
+        intro.properties = FParagraphProperties {
+            alignment: FParagraphAlignment::Justify,
+            indent_left: Some(720),
+            indent_first_line: Some(360),
+            spacing_after: Some(160),
+            line_spacing: Some(360),
+            line_spacing_rule: Some(FLineSpacingRule::Auto),
+            ..Default::default()
+        };
+        intro
+            .runs
+            .push(run("This paragraph contains ", FRunProperties::default()));
+        intro.runs.push(run(
+            "bold",
+            FRunProperties {
+                bold: Some(true),
+                ..Default::default()
+            },
+        ));
+        intro.runs.push(run(", ", FRunProperties::default()));
+        intro.runs.push(run(
+            "italic",
+            FRunProperties {
+                italic: Some(true),
+                ..Default::default()
+            },
+        ));
+        intro.runs.push(run(", ", FRunProperties::default()));
+        intro.runs.push(run(
+            "underline",
+            FRunProperties {
+                underline: Some(true),
+                ..Default::default()
+            },
+        ));
+        intro.runs.push(run(", ", FRunProperties::default()));
+        intro.runs.push(run(
+            "strike",
+            FRunProperties {
+                strike: Some(true),
+                ..Default::default()
+            },
+        ));
+        intro.runs.push(run(", ", FRunProperties::default()));
+        intro.runs.push(run(
+            "highlight",
+            FRunProperties {
+                highlight: Some("yellow".into()),
+                ..Default::default()
+            },
+        ));
+        intro.runs.push(run(", ", FRunProperties::default()));
+        intro.runs.push(run(
+            "superscript",
+            FRunProperties {
+                vert_align: Some(FVerticalAlign::Superscript),
+                ..Default::default()
+            },
+        ));
+        intro.runs.push(run(", ", FRunProperties::default()));
+        intro.runs.push(run(
+            "subscript",
+            FRunProperties {
+                vert_align: Some(FVerticalAlign::Subscript),
+                ..Default::default()
+            },
+        ));
+        intro.runs.push(run(", and ", FRunProperties::default()));
+        intro.runs.push(run(
+            "small caps",
+            FRunProperties {
+                small_caps: Some(true),
+                ..Default::default()
+            },
+        ));
+        intro.runs.push(run(
+            " text in one paragraph.",
+            FRunProperties {
+                spacing: Some(20),
+                scale: Some(110),
+                position: Some(10),
+                size_cs: Some(24),
+                bold_cs: Some(true),
+                italic_cs: Some(true),
+                rtl: Some(false),
+                ..Default::default()
+            },
+        ));
+        doc.body.blocks.push(FBlock::Paragraph(intro));
+        let mut link_para = FParagraph::default();
+        link_para.properties.alignment = FParagraphAlignment::Left;
+        link_para
+            .runs
+            .push(run("Visit ", FRunProperties::default()));
+        link_para.hyperlinks.push(FHyperlink {
+            relationship_id: Some("rId100".into()),
+            anchor: None,
+            target: Some("https://www.rust-lang.org".into()),
+            text: "the Rust website".into(),
+            is_external: true,
+        });
+        link_para.hyperlinks.push(FHyperlink {
+            relationship_id: None,
+            anchor: Some("bookmark1".into()),
+            target: None,
+            text: "internal bookmark".into(),
+            is_external: false,
+        });
+        doc.body.blocks.push(FBlock::Paragraph(link_para));
+        let mut numbered1 = para("First numbered item");
+        numbered1.properties.numbering = Some(FNumberingProperties {
+            level: Some(0),
+            num_id: Some(1),
+        });
+        let mut numbered2 = para("Second numbered item");
+        numbered2.properties.numbering = Some(FNumberingProperties {
+            level: Some(0),
+            num_id: Some(1),
+        });
+        doc.body.blocks.push(FBlock::Paragraph(numbered1));
+        doc.body.blocks.push(FBlock::Paragraph(numbered2));
+        let mut header = FTableRow::default();
+        header.properties = FTableRowProperties {
+            is_header: Some(true),
+            height: Some(420),
+            height_rule: Some("atLeast".into()),
+            cant_split: Some(true),
+            ..Default::default()
+        };
+        header.cells.push(cell("Name"));
+        header.cells.push(cell("Value"));
+        header.cells.push(cell("Note"));
+        let mut row1 = FTableRow::default();
+        let mut merged = cell("Merged cell");
+        merged.vertical_merge = Some(FVerticalMerge::Restart);
+        row1.cells.push(merged);
+        row1.cells.push(cell("100"));
+        row1.cells.push(cell("alpha"));
+        let mut row2 = FTableRow::default();
+        let mut cont = cell("");
+        cont.vertical_merge = Some(FVerticalMerge::Continue);
+        row2.cells.push(cont);
+        let mut spanned = cell("Spans two columns");
+        spanned.grid_span = 2;
+        row2.cells.push(spanned);
+        let mut row3 = FTableRow::default();
+        let border = Some(FBorder {
+            style: Some("single".into()),
+            size: Some(8),
+            color: Some("0000FF".into()),
+        });
+        let mut styled = cell("Styled");
+        styled.properties = FTableCellProperties {
+            width: Some(2400),
+            borders: Some(FCellBorders {
+                top: border.clone(),
+                left: border.clone(),
+                bottom: border.clone(),
+                right: border,
+            }),
+            shading: Some("D9E2F3".into()),
+            vertical_alignment: Some(FCellVerticalAlignment::Center),
+            no_wrap: Some(true),
+            ..Default::default()
+        };
+        row3.cells.push(styled);
+        row3.cells.push(cell("200"));
+        row3.cells.push(cell("beta"));
+        let mut row4 = FTableRow::default();
+        let mut host = cell("Nested table host");
+        let mut nested = FTable::default();
+        let mut nested_row = FTableRow::default();
+        nested_row.cells.push(cell("Nested A"));
+        nested_row.cells.push(cell("Nested B"));
+        nested.rows.push(nested_row);
+        host.tables.push(nested);
+        row4.cells.push(host);
+        row4.cells.push(cell("300"));
+        row4.cells.push(cell("gamma"));
+        let mut table = FTable::default();
+        table.properties = FTableProperties {
+            style_id: Some("TableGrid".into()),
+            width: Some(9000),
+            width_type: Some("dxa".into()),
+            alignment: Some("center".into()),
+            indent: Some(0),
+            layout: Some("fixed".into()),
+            ..Default::default()
+        };
+        table.grid_columns = vec![3000, 3000, 3000];
+        table.rows = vec![header, row1, row2, row3, row4];
+        doc.body.blocks.push(FBlock::Table(table));
+        let bytes = doc.to_bytes().expect("serialize failed");
+        let parsed = FWord::with_bytes(&bytes).expect("re-parse failed");
+        let text = parsed.plain_text();
+        assert!(text.contains("Complex Document"));
+        assert!(text.contains("bold"));
+        assert!(text.contains("the Rust website"));
+        assert!(text.contains("First numbered item"));
+        assert!(text.contains("Merged cell"));
+        assert!(text.contains("Nested A"));
+        let path = save(&parsed, "complex_document.docx");
+        println!("complex document written to {}", path.display());
     }
 }

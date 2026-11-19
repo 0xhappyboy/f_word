@@ -7,7 +7,8 @@ mod xml;
 pub use core::docs::{FBlock, FBody, FWord};
 pub use core::numbering::{FAbstractNum, FNum, FNumbering, FNumberingLevel};
 pub use core::paragraph::{
-    FHyperlink, FNumberingProperties, FParagraph, FParagraphAlignment, FParagraphProperties,
+    FHyperlink, FLineSpacingRule, FNumberingProperties, FParagraph, FParagraphAlignment,
+    FParagraphProperties,
 };
 pub use core::run::{FRun, FRunProperties, FVerticalAlign};
 pub use core::settings::{FSectionProperties, FSettings};
